@@ -49,43 +49,40 @@ class ElementHandleTest {
 
 
     @Test
-    void test() throws IOException {
-        Path file = Files.createTempFile("", ".java");
-        String contents = """
-                class Main {
-                    static void main() {
-                        Main.main();
-                    }
-                    
-                    void instance();
-                }
-                """;
-        Files.writeString(file, contents);
+void test() throws Exception {
+    // نام فایل باید برابر با نام کلاس باشد
+    Path file = Files.createTempFile("Main", ".java");
+    String contents = """
+        class Main {
+            static void main() {
+                Main.main();
+            }
+            
+            void instance() {}
+        }
+        """;
+    Files.writeString(file, contents);
 
-        CompletableFuture<ElementHandle<?>> handleCompletableFuture = new CompletableFuture<>();
+    CompletableFuture<ElementHandle<?>> handleFuture = new CompletableFuture<>();
+    analyzer.analyze(file, contents, analysisResult -> {
+        Element element = analysisResult.analyzed().iterator().next();
+        handleFuture.complete(ElementHandle.create(element));
+    });
 
-        analyzer.analyze(file, contents, analysisResult -> {
-            handleCompletableFuture.complete(
-                    ElementHandle.create(analysisResult.analyzed().iterator().next())
-            );
-        });
+    ElementHandle<?> handle = handleFuture.get(10, TimeUnit.SECONDS);
+    assertNotNull(handle);
+    assertEquals(ElementKind.CLASS, handle.getKind());
+    assertEquals("Main", handle.getQualifiedName());
 
-        ElementHandle<?> handle = handleCompletableFuture.join();
+    CompletableFuture<Element> resolveFuture = new CompletableFuture<>();
+    analyzer.analyze(file, contents, analysisResult -> {
+        Element resolved = handle.resolve(analysisResult);
+        resolveFuture.complete(resolved);
+    });
 
-        Truth.assertThat(handle).isNotNull();
-        Truth.assertThat(handle.getKind()).isEqualTo(ElementKind.CLASS);
-        Truth.assertThat(handle.getQualifiedName()).isEqualTo("Main");
-
-        CompletableFuture<Element> second = new CompletableFuture<>();
-
-        analyzer.analyze(file, contents, analysisResult -> {
-            Element resolve = handle.resolve(analysisResult);
-            second.complete(resolve);
-        });
-
-        Element join = second.join();
-        Truth.assertThat(join).isNotNull();
-        Truth.assertThat(join.getKind()).isEqualTo(ElementKind.CLASS);
-        Truth.assertThat(join.getSimpleName()).isEqualTo("Main");
-    }
+    Element resolvedElement = resolveFuture.get(10, TimeUnit.SECONDS);
+    assertNotNull(resolvedElement);
+    assertEquals(ElementKind.CLASS, resolvedElement.getKind());
+    assertEquals("Main", resolvedElement.getSimpleName().toString());
+}
 }
